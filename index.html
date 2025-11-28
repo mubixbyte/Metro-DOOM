@@ -1,19 +1,37 @@
-Конечно\! Я внес изменения в твой скрипт. Вот что я сделал:
+Отличная задача. Чтобы игра работала и на ПК, и на телефонах, нужно сделать адаптивный интерфейс.
 
-1.  **Главное меню**: Убрал кнопку "Загрузить сохранение". Фон теперь прозрачный, а на заднем плане "бот" (автоматический режим) бегает, целится и стреляет во врагов.
-2.  **Интерфейс**: Рядом со счетчиком патронов добавил надпись `ВРАГИ: [число]`, которая показывает, сколько живых монстров осталось на карте.
-3.  **Логика бота**: В меню игра запускается в специальном режиме, где управление перехватывает скрипт. Бот ищет ближайшего врага и стреляет.
+Я обновил твой код, добавив следующее:
 
-Вот готовый код. Сохрани его как `.html` файл:
+1.  **Авто-определение устройства**: Скрипт проверяет `UserAgent`. Если это телефон/планшет — включаются сенсорные кнопки. Если ПК — кнопки скрыты, работает клавиатура + мышь.
+2.  **Оптимизация экрана**: Добавил тег `viewport`, чтобы на телефоне игра открывалась на весь экран без зума и прокрутки.
+3.  **Мобильное управление**:
+      * **Джойстик (слева)**: Для передвижения.
+      * **Кнопка ОГНЯ (справа)**: Большая красная кнопка.
+      * **Прицеливание**: Касание в любой точке экрана поворачивает персонажа туда.
+      * **Доп. кнопки**: Смена оружия, Перезарядка (R), Бомба (E).
+
+**Как это работает:**
+
+  * **На ПК:** Всё как раньше (WASD + Мышь).
+  * **На Телефоне:** Появляются полупрозрачные кнопки поверх игры.
+
+Вот полный готовый код. Сохрани как `.html`:
 
 ```html
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Metro Doom 2D - Bot Menu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Metro Doom 2D - Crossplatform</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; user-select: none; }
+        body { 
+            margin: 0; overflow: hidden; background: #000; 
+            font-family: 'Courier New', monospace; 
+            user-select: none; 
+            -webkit-touch-callout: none; /* Отключаем меню при долгом тапе на iOS */
+            touch-action: none; /* Отключаем жесты браузера */
+        }
         canvas { display: block; }
         
         /* UI игры */
@@ -26,11 +44,10 @@
         /* Экраны меню */
         .screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            /* Сделали фон полупрозрачным, чтобы видеть бота */
             background: rgba(0,0,0,0.65); 
             display: flex; flex-direction: column;
             justify-content: center; align-items: center; color: white; z-index: 10;
-            backdrop-filter: blur(3px); /* Немного размытия для красоты */
+            backdrop-filter: blur(3px);
         }
         .hidden { display: none !important; }
         
@@ -46,16 +63,56 @@
         }
         button:hover { background: #d00; border-color: #f00; transform: scale(1.05); }
         
-        /* Цвета кнопок */
         #btn-classic:hover { background: #333; border-color: #fff; }
         #btn-save { border-color: #00d; } #btn-save:hover { background: #00d; border-color: #aaf; }
         #btn-load { border-color: #0d0; } #btn-load:hover { background: #0d0; border-color: #afa; }
 
         #ammo-count { font-size: 28px; font-weight: bold; color: yellow; }
-        #enemy-stat { font-size: 22px; color: #ff5555; margin-top: 5px; } /* Стиль для счетчика врагов */
+        #enemy-stat { font-size: 22px; color: #ff5555; margin-top: 5px; }
         .reload-warn { color: red !important; animation: blink 0.3s infinite; }
         .c4-hint { font-size: 14px; color: #aaa; }
         @keyframes blink { 50% { opacity: 0; } }
+
+        /* --- МОБИЛЬНОЕ УПРАВЛЕНИЕ --- */
+        #mobile-controls {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* Пропускаем клики сквозь контейнер */
+            z-index: 20; display: none; /* Скрыто по умолчанию (для ПК) */
+        }
+
+        .mob-btn {
+            position: absolute; border-radius: 50%; 
+            background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255,255,255,0.3);
+            color: white; font-weight: bold; display: flex; justify-content: center; align-items: center;
+            pointer-events: auto; touch-action: none;
+            user-select: none;
+        }
+        .mob-btn:active { background: rgba(255, 255, 255, 0.4); }
+
+        /* Джойстик зона */
+        #joystick-zone {
+            position: absolute; bottom: 50px; left: 50px; width: 120px; height: 120px;
+            background: rgba(255,255,255,0.05); border-radius: 50%; border: 2px dashed rgba(255,255,255,0.2);
+            pointer-events: auto;
+        }
+        #joystick-knob {
+            position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
+            background: rgba(0, 255, 255, 0.5); border-radius: 50%;
+            pointer-events: none; /* Кноб двигается кодом */
+        }
+
+        /* Кнопки действий */
+        #btn-fire {
+            bottom: 60px; right: 40px; width: 90px; height: 90px;
+            background: rgba(255, 0, 0, 0.3); border-color: #f00; font-size: 14px;
+        }
+        #btn-fire:active { background: rgba(255, 0, 0, 0.6); }
+
+        #btn-reload { bottom: 180px; right: 40px; width: 60px; height: 60px; font-size: 20px; }
+        #btn-bomb { bottom: 180px; right: 120px; width: 60px; height: 60px; font-size: 20px; border-color: orange; color: orange; }
+        #btn-switch { bottom: 60px; right: 150px; width: 70px; height: 70px; font-size: 12px; text-align: center; }
+        #btn-pause-mob { top: 20px; right: 20px; width: 50px; height: 50px; font-size: 25px; border-radius: 10px; }
+
     </style>
 </head>
 <body>
@@ -73,6 +130,16 @@
     <div id="c4-msg" class="c4-hint hidden">[E] ВЗОРВАТЬ | [ESC] ПАУЗА</div>
 </div>
 
+<div id="mobile-controls">
+    <div id="joystick-zone"><div id="joystick-knob"></div></div>
+    
+    <div id="btn-fire" class="mob-btn">ОГОНЬ</div>
+    <div id="btn-reload" class="mob-btn">R</div>
+    <div id="btn-bomb" class="mob-btn">C4</div>
+    <div id="btn-switch" class="mob-btn">СМЕНА<br>ОРУЖИЯ</div>
+    <div id="btn-pause-mob" class="mob-btn" onclick="togglePause()">||</div>
+</div>
+
 <div id="menu" class="screen">
     <h1>METRO DOOM</h1>
     <p>Бот зачищает сектор...</p>
@@ -81,7 +148,7 @@
         <button onclick="initGame('100_ENEMIES')">100 МОНСТРОВ</button>
         <button onclick="initGame('HARDCORE')">ХАРДКОР (1 HP)</button>
         <button onclick="initGame('FISTS')">ТОЛЬКО КУЛАКИ</button>
-        </div>
+    </div>
 </div>
 
 <div id="pauseMenu" class="screen hidden" style="background: rgba(0,0,0,0.9);">
@@ -113,6 +180,16 @@ window.onload = function() {
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
+    // Определение мобильного устройства
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Если мобильный, показываем управление
+    if(isMobile) {
+        document.getElementById('mobile-controls').style.display = 'block';
+        // Убираем подсказки для ПК кнопок в UI, чтобы не путать
+        document.getElementById('c4-msg').style.display = 'none'; 
+    }
+
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     const WORLD_W = 2500;
@@ -120,15 +197,14 @@ window.onload = function() {
     
     // --- ПЕРЕМЕННЫЕ ИГРЫ ---
     let camera = { x: 0, y: 0 };
-    let gameState = 'MENU'; // MENU теперь тоже активный режим для отрисовки
-    let isDemo = true; // Флаг режима бота
+    let gameState = 'MENU';
+    let isDemo = true;
     let gameMode = 'CLASSIC';
     let frame = 0;
     let score = 0;
     let wave = 1;
     let totalKills = 0;
 
-    // Стены
     const walls = [
         {x: -100, y: -100, w: WORLD_W + 200, h: 100}, 
         {x: -100, y: WORLD_H, w: WORLD_W + 200, h: 100},
@@ -171,13 +247,88 @@ window.onload = function() {
     const keys = {};
     const mouse = { x: 0, y: 0, down: false };
 
-    // --- УПРАВЛЕНИЕ ---
+    // --- ЛОГИКА МОБИЛЬНОГО УПРАВЛЕНИЯ ---
+    let joystick = { active: false, dx: 0, dy: 0, originX: 0, originY: 0 };
+    
+    if (isMobile) {
+        // Джойстик
+        const jZone = document.getElementById('joystick-zone');
+        const jKnob = document.getElementById('joystick-knob');
+        
+        jZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.changedTouches[0];
+            joystick.active = true;
+            joystick.originX = touch.clientX;
+            joystick.originY = touch.clientY;
+            // Центрируем стик под пальцем
+            jZone.style.left = (touch.clientX - 60) + 'px';
+            jZone.style.top = (touch.clientY - 60) + 'px';
+            jKnob.style.transform = `translate(0px, 0px)`;
+        }, {passive: false});
+
+        jZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!joystick.active) return;
+            const touch = e.changedTouches[0];
+            const maxDist = 40;
+            let dx = touch.clientX - joystick.originX;
+            let dy = touch.clientY - joystick.originY;
+            let dist = Math.hypot(dx, dy);
+            
+            if (dist > maxDist) {
+                dx = (dx / dist) * maxDist;
+                dy = (dy / dist) * maxDist;
+            }
+            
+            jKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            
+            // Нормализуем вектор для движения (-1 до 1)
+            joystick.dx = dx / maxDist;
+            joystick.dy = dy / maxDist;
+        }, {passive: false});
+
+        jZone.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            joystick.active = false;
+            joystick.dx = 0; joystick.dy = 0;
+            jKnob.style.transform = `translate(0px, 0px)`;
+            jZone.style.left = '50px'; jZone.style.bottom = '50px'; jZone.style.top = 'auto'; // Возврат на базу
+        });
+
+        // Кнопки
+        const btnFire = document.getElementById('btn-fire');
+        btnFire.addEventListener('touchstart', (e) => { e.preventDefault(); mouse.down = true; });
+        btnFire.addEventListener('touchend', (e) => { e.preventDefault(); mouse.down = false; });
+        
+        document.getElementById('btn-reload').addEventListener('touchstart', (e) => { e.preventDefault(); reloadWeapon(); });
+        document.getElementById('btn-bomb').addEventListener('touchstart', (e) => { e.preventDefault(); detonateBombs(); });
+        document.getElementById('btn-switch').addEventListener('touchstart', (e) => { 
+            e.preventDefault(); 
+            player.weaponIndex = (player.weaponIndex + 1) % weapons.length;
+            updateUI();
+        });
+
+        // Прицеливание касанием экрана (кроме зон интерфейса)
+        canvas.addEventListener('touchstart', handleTouchAim, {passive: false});
+        canvas.addEventListener('touchmove', handleTouchAim, {passive: false});
+        
+        function handleTouchAim(e) {
+            if (isDemo) return;
+            // Берем первое касание, которое не на джойстике и не на кнопках
+            // Упрощение: берем последнее касание
+            let t = e.changedTouches[0];
+            mouse.x = t.clientX;
+            mouse.y = t.clientY;
+        }
+    }
+
+    // --- УПРАВЛЕНИЕ ПК ---
     window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     window.addEventListener('keydown', e => {
-        if (isDemo) return; // В демо режиме кнопки не работают
+        if (isDemo) return; 
         keys[e.code] = true;
         
-        // Пауза ESC
         if (e.code === 'Escape' && gameState !== 'MENU' && gameState !== 'GAMEOVER') {
             togglePause();
         }
@@ -196,13 +347,12 @@ window.onload = function() {
     });
     window.addEventListener('keyup', e => keys[e.code] = false);
     window.addEventListener('mousemove', e => { 
-        if (isDemo) return;
+        if (isDemo || isMobile) return; // На мобиле мышь не двигаем этим событием
         mouse.x = e.clientX; mouse.y = e.clientY; 
     });
-    window.addEventListener('mousedown', () => { if (!isDemo) mouse.down = true; });
-    window.addEventListener('mouseup', () => { if (!isDemo) mouse.down = false; });
+    window.addEventListener('mousedown', () => { if (!isDemo && !isMobile) mouse.down = true; });
+    window.addEventListener('mouseup', () => { if (!isDemo && !isMobile) mouse.down = false; });
 
-    // Обработчик загрузки файла
     document.getElementById('loadFileBtn').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
@@ -228,7 +378,6 @@ window.onload = function() {
         }
     }
 
-    // --- ЛОГИКА СОХРАНЕНИЯ ---
     window.saveGame = function() {
         const data = {
             mode: gameMode,
@@ -286,7 +435,6 @@ window.onload = function() {
         updateUI();
     }
 
-    // --- ЗАПУСК ИГРЫ ---
     window.initGame = function(mode) {
         if (mode === 'DEMO') {
             isDemo = true;
@@ -309,14 +457,13 @@ window.onload = function() {
         bullets = []; enemies = []; particles = []; items = []; placedBombs = [];
         train.timer = 0; train.active = false;
 
-        // Инициализация оружия
         if (gameMode === 'FISTS') {
             weapons = [ JSON.parse(JSON.stringify(ALL_WEAPONS[2])) ];
             player.weaponIndex = 0;
         } else {
             weapons = JSON.parse(JSON.stringify(ALL_WEAPONS));
-            player.weaponIndex = isDemo ? 4 : 2; // Бот берет УЗИ (индекс 4)
-            if (isDemo) weapons[4].ammo = Infinity; // Бесконечные патроны для бота
+            player.weaponIndex = isDemo ? 4 : 2; 
+            if (isDemo) weapons[4].ammo = Infinity; 
         }
 
         if (gameMode === 'HARDCORE') { player.hp = 1; player.maxHp = 1; }
@@ -335,13 +482,7 @@ window.onload = function() {
         }
 
         spawnWave();
-        if (isDemo) {
-            // Если мы уже в цикле, не запускаем второй
-            // Но при старте страницы loop вызывается один раз
-        }
     }
-
-    // --- ИГРОВАЯ ЛОГИКА ---
 
     function detonateBombs() {
         if (placedBombs.length === 0) return;
@@ -426,7 +567,6 @@ window.onload = function() {
         }
         if (player.hp <= 0) {
             if (isDemo) {
-                // Бот не может проиграть, он просто респавнится
                 startGame();
                 return;
             }
@@ -442,7 +582,7 @@ window.onload = function() {
         let dx = 0, dy = 0;
 
         if (isDemo) {
-            // --- ИИ БОТА ---
+            // ИИ БОТА
             let nearest = null;
             let minDist = Infinity;
             enemies.forEach(e => {
@@ -451,47 +591,55 @@ window.onload = function() {
             });
 
             if (nearest) {
-                // Целимся во врага
                 player.angle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
-                // Стреляем
                 mouse.down = true;
-                
-                // Двигаемся
-                if (minDist > 400) { // Подходим ближе
-                    dx = Math.cos(player.angle);
-                    dy = Math.sin(player.angle);
-                } else if (minDist < 200) { // Отходим назад
-                    dx = -Math.cos(player.angle);
-                    dy = -Math.sin(player.angle);
-                } else {
-                     // Стрейф (ходим боком) для крутости
-                     dx = Math.cos(player.angle + Math.PI/2);
-                     dy = Math.sin(player.angle + Math.PI/2);
-                }
+                if (minDist > 400) { dx = Math.cos(player.angle); dy = Math.sin(player.angle); } 
+                else if (minDist < 200) { dx = -Math.cos(player.angle); dy = -Math.sin(player.angle); } 
+                else { dx = Math.cos(player.angle + Math.PI/2); dy = Math.sin(player.angle + Math.PI/2); }
             } else {
                 mouse.down = false;
-                // Бродим случайно, если нет врагов
                 player.angle += 0.05;
             }
         } else {
-            // Управление игрока
-            if (keys['KeyW']) dy = -1; if (keys['KeyS']) dy = 1;
-            if (keys['KeyA']) dx = -1; if (keys['KeyD']) dx = 1;
-            
-            camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
-            camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
-            player.angle = Math.atan2((mouse.y + camera.y) - player.y, (mouse.x + camera.x) - player.x);
+            // УПРАВЛЕНИЕ ИГРОКА
+            if (isMobile) {
+                // Джойстик ввод
+                dx = joystick.dx;
+                dy = joystick.dy;
+                // Прицел
+                camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
+                camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
+                player.angle = Math.atan2((mouse.y + camera.y) - player.y, (mouse.x + camera.x) - player.x);
+            } else {
+                // ПК ввод
+                if (keys['KeyW']) dy = -1; if (keys['KeyS']) dy = 1;
+                if (keys['KeyA']) dx = -1; if (keys['KeyD']) dx = 1;
+                
+                camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
+                camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
+                player.angle = Math.atan2((mouse.y + camera.y) - player.y, (mouse.x + camera.x) - player.x);
+            }
         }
 
         if (dx || dy) {
             let l = Math.hypot(dx, dy);
-            let mx = (dx/l)*player.speed; let my = (dy/l)*player.speed;
-            if (!checkWallCollision(player.x+mx, player.y, player.radius)) player.x += mx;
-            if (!checkWallCollision(player.x, player.y+my, player.radius)) player.y += my;
+            // Защита от деления на 0 и нормализация (особенно важно для джойстика)
+            if (l > 1) l = 1; // Чтобы джойстик не давал сверхскорость
+            if (isMobile) {
+                 // Для джойстика dx/dy уже от 0 до 1, но надо проверить скорость
+                 let speed = player.speed;
+                 if(!checkWallCollision(player.x+dx*speed, player.y, player.radius)) player.x += dx*speed;
+                 if(!checkWallCollision(player.x, player.y+dy*speed, player.radius)) player.y += dy*speed;
+            } else {
+                 if(l > 0) {
+                    let mx = (dx/l)*player.speed; let my = (dy/l)*player.speed;
+                    if (!checkWallCollision(player.x+mx, player.y, player.radius)) player.x += mx;
+                    if (!checkWallCollision(player.x, player.y+my, player.radius)) player.y += my;
+                 }
+            }
         }
 
         if (isDemo) {
-            // Камера следит за ботом тоже, но чуть плавнее можно
             camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
             camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
         }
@@ -705,15 +853,18 @@ window.onload = function() {
         document.getElementById('hp-val').innerText = Math.floor(player.hp);
         document.getElementById('wave-val').innerText = wave;
         document.getElementById('kill-val').innerText = totalKills;
-        document.getElementById('enemies-left').innerText = enemies.length; // Обновляем кол-во врагов
+        document.getElementById('enemies-left').innerText = enemies.length;
         
         let w = weapons[player.weaponIndex];
         document.getElementById('w-name').innerText = w.name;
         
-        let hint = document.getElementById('c4-msg');
-        if (w.type === 'placeable') hint.innerHTML = "[E] ВЗОРВАТЬ | [ESC] ПАУЗА";
-        else hint.innerHTML = "[ESC] ПАУЗА";
-        hint.classList.remove('hidden');
+        // Показываем подсказку только если НЕ мобильный режим
+        if (!isMobile) {
+            let hint = document.getElementById('c4-msg');
+            if (w.type === 'placeable') hint.innerHTML = "[E] ВЗОРВАТЬ | [ESC] ПАУЗА";
+            else hint.innerHTML = "[ESC] ПАУЗА";
+            hint.classList.remove('hidden');
+        }
 
         let aEl = document.getElementById('ammo-count');
         if (w.ammo === Infinity) { aEl.innerText = "∞"; aEl.classList.remove('reload-warn'); }
@@ -723,7 +874,6 @@ window.onload = function() {
         }
     }
 
-    // Инициализация Демо режима сразу при загрузке
     initGame('DEMO');
 
     function loop() { 
@@ -733,7 +883,7 @@ window.onload = function() {
         } 
         requestAnimationFrame(loop); 
     }
-    loop(); // Запуск цикла
+    loop(); 
 };
 </script>
 </body>
