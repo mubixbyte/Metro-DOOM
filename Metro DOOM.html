@@ -1,0 +1,741 @@
+Конечно\! Я внес изменения в твой скрипт. Вот что я сделал:
+
+1.  **Главное меню**: Убрал кнопку "Загрузить сохранение". Фон теперь прозрачный, а на заднем плане "бот" (автоматический режим) бегает, целится и стреляет во врагов.
+2.  **Интерфейс**: Рядом со счетчиком патронов добавил надпись `ВРАГИ: [число]`, которая показывает, сколько живых монстров осталось на карте.
+3.  **Логика бота**: В меню игра запускается в специальном режиме, где управление перехватывает скрипт. Бот ищет ближайшего врага и стреляет.
+
+Вот готовый код. Сохрани его как `.html` файл:
+
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Metro Doom 2D - Bot Menu</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; user-select: none; }
+        canvas { display: block; }
+        
+        /* UI игры */
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: #0f0;
+            font-size: 20px; text-shadow: 2px 2px #000; pointer-events: none; z-index: 5;
+            display: none;
+        }
+        
+        /* Экраны меню */
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            /* Сделали фон полупрозрачным, чтобы видеть бота */
+            background: rgba(0,0,0,0.65); 
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white; z-index: 10;
+            backdrop-filter: blur(3px); /* Немного размытия для красоты */
+        }
+        .hidden { display: none !important; }
+        
+        h1 { font-size: 50px; color: #d00; text-shadow: 0 0 15px red; margin: 0 0 10px 0; text-align: center; text-transform: uppercase;}
+        h2 { font-size: 40px; color: #fa0; margin-bottom: 20px; }
+        p { font-size: 18px; color: #ccc; margin: 5px; text-align: center;}
+        
+        .btn-container { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; align-items: center;}
+        button {
+            padding: 12px 30px; font-size: 20px; background: rgba(34, 34, 34, 0.9);
+            color: #fff; border: 2px solid #555; cursor: pointer; transition: 0.2s;
+            font-family: 'Courier New', monospace; width: 320px;
+        }
+        button:hover { background: #d00; border-color: #f00; transform: scale(1.05); }
+        
+        /* Цвета кнопок */
+        #btn-classic:hover { background: #333; border-color: #fff; }
+        #btn-save { border-color: #00d; } #btn-save:hover { background: #00d; border-color: #aaf; }
+        #btn-load { border-color: #0d0; } #btn-load:hover { background: #0d0; border-color: #afa; }
+
+        #ammo-count { font-size: 28px; font-weight: bold; color: yellow; }
+        #enemy-stat { font-size: 22px; color: #ff5555; margin-top: 5px; } /* Стиль для счетчика врагов */
+        .reload-warn { color: red !important; animation: blink 0.3s infinite; }
+        .c4-hint { font-size: 14px; color: #aaa; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<input type="file" id="loadFileBtn" style="display:none" accept=".json">
+
+<div id="ui">
+    <div>HP: <span id="hp-val">100</span>%</div>
+    <div id="wave-ui">WAVE: <span id="wave-val">1</span></div>
+    <div id="goal-ui" class="hidden">KILLS: <span id="kill-val">0</span> / 100</div>
+    <br>
+    <div id="w-name" style="color:cyan; font-size: 22px;">КУЛАКИ</div>
+    <div id="ammo-count">∞</div>
+    <div id="enemy-stat">ВРАГИ: <span id="enemies-left">0</span></div>
+    <div id="c4-msg" class="c4-hint hidden">[E] ВЗОРВАТЬ | [ESC] ПАУЗА</div>
+</div>
+
+<div id="menu" class="screen">
+    <h1>METRO DOOM</h1>
+    <p>Бот зачищает сектор...</p>
+    <div class="btn-container">
+        <button onclick="initGame('CLASSIC')">КЛАССИКА</button>
+        <button onclick="initGame('100_ENEMIES')">100 МОНСТРОВ</button>
+        <button onclick="initGame('HARDCORE')">ХАРДКОР (1 HP)</button>
+        <button onclick="initGame('FISTS')">ТОЛЬКО КУЛАКИ</button>
+        </div>
+</div>
+
+<div id="pauseMenu" class="screen hidden" style="background: rgba(0,0,0,0.9);">
+    <h1>ПАУЗА</h1>
+    <div class="btn-container">
+        <button onclick="togglePause()">ПРОДОЛЖИТЬ</button>
+        <button id="btn-save" onclick="saveGame()">СОХРАНИТЬ В ФАЙЛ</button>
+        <button id="btn-load" onclick="triggerLoad()">ЗАГРУЗИТЬ ИЗ ФАЙЛА</button>
+        <button onclick="location.reload()">ВЫЙТИ В МЕНЮ</button>
+    </div>
+</div>
+
+<div id="gameOver" class="screen hidden">
+    <h1>ТЫ ПОГИБ</h1>
+    <p>Убито: <span id="final-kills">0</span></p>
+    <button onclick="location.reload()">В МЕНЮ</button>
+</div>
+
+<div id="victory" class="screen hidden">
+    <h2>ПОБЕДА!</h2>
+    <p>Метро зачищено.</p>
+    <button onclick="location.reload()">В МЕНЮ</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+window.onload = function() {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const WORLD_W = 2500;
+    const WORLD_H = 1500;
+    
+    // --- ПЕРЕМЕННЫЕ ИГРЫ ---
+    let camera = { x: 0, y: 0 };
+    let gameState = 'MENU'; // MENU теперь тоже активный режим для отрисовки
+    let isDemo = true; // Флаг режима бота
+    let gameMode = 'CLASSIC';
+    let frame = 0;
+    let score = 0;
+    let wave = 1;
+    let totalKills = 0;
+
+    // Стены
+    const walls = [
+        {x: -100, y: -100, w: WORLD_W + 200, h: 100}, 
+        {x: -100, y: WORLD_H, w: WORLD_W + 200, h: 100},
+        {x: -100, y: 0, w: 100, h: WORLD_H}, 
+        {x: WORLD_W, y: 0, w: 100, h: WORLD_H},
+        {x: 400, y: 200, w: 100, h: 100}, {x: 1000, y: 200, w: 100, h: 100},
+        {x: 1600, y: 200, w: 100, h: 100}, {x: 2200, y: 200, w: 100, h: 100},
+        {x: 400, y: 1200, w: 100, h: 100}, {x: 1000, y: 1200, w: 100, h: 100},
+        {x: 1600, y: 1200, w: 100, h: 100},
+        {x: 150, y: 150, w: 20, h: 300}, {x: 150, y: 150, w: 300, h: 20},
+        {x: 1800, y: 800, w: 300, h: 50}
+    ];
+
+    let player = {
+        x: 300, y: WORLD_H - 300, radius: 20, speed: 5, hp: 100, maxHp: 100, angle: 0,
+        weaponIndex: 0, reloading: false, reloadTimer: 0, reloadMax: 0
+    };
+
+    let weapons = []; 
+    const ALL_WEAPONS = [
+        { name: "ДРОБОВИК", type: 'gun', dmg: 15, delay: 55, ammo: 8, max: 8, rld: 120, count: 6, spread: 0.35, range: 400, col: 'orange' }, 
+        { name: "ПИСТОЛЕТ", type: 'gun', dmg: 25, delay: 18, ammo: 12, max: 12, rld: 60, count: 1, spread: 0.05, range: 650, col: 'yellow' }, 
+        { name: "КУЛАКИ",   type: 'melee', dmg: 20, delay: 20, ammo: Infinity, max: 0, rld: 0, range: 75, col: 'white' }, 
+        { name: "НОЖ",      type: 'melee', dmg: 45, delay: 15, ammo: Infinity, max: 0, rld: 0, range: 85, col: '#aaa' },  
+        { name: "УЗИ",      type: 'gun', dmg: 10, delay: 5,  ammo: 35, max: 35, rld: 90, count: 1, spread: 0.15, range: 500, col: 'cyan' },
+        { name: "C4 БОМБА", type: 'placeable', dmg: 200, delay: 30, ammo: 10, max: 10, rld: 0, range: 200, col: '#f33' }
+    ];
+
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+    let items = [];
+    let placedBombs = [];
+    
+    let train = {
+        active: false, y: WORLD_H / 2 - 70, height: 140, x: -3000,
+        speed: 35, warning: false, timer: 0
+    };
+
+    const keys = {};
+    const mouse = { x: 0, y: 0, down: false };
+
+    // --- УПРАВЛЕНИЕ ---
+    window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+    window.addEventListener('keydown', e => {
+        if (isDemo) return; // В демо режиме кнопки не работают
+        keys[e.code] = true;
+        
+        // Пауза ESC
+        if (e.code === 'Escape' && gameState !== 'MENU' && gameState !== 'GAMEOVER') {
+            togglePause();
+        }
+
+        if (gameState === 'PLAYING') {
+            if (!player.reloading) {
+                let keyNum = parseInt(e.key);
+                if (keyNum >= 1 && keyNum <= weapons.length) {
+                    player.weaponIndex = keyNum - 1;
+                    updateUI();
+                }
+            }
+            if (e.code === 'KeyR') reloadWeapon();
+            if (e.code === 'KeyE') detonateBombs();
+        }
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('mousemove', e => { 
+        if (isDemo) return;
+        mouse.x = e.clientX; mouse.y = e.clientY; 
+    });
+    window.addEventListener('mousedown', () => { if (!isDemo) mouse.down = true; });
+    window.addEventListener('mouseup', () => { if (!isDemo) mouse.down = false; });
+
+    // Обработчик загрузки файла
+    document.getElementById('loadFileBtn').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                loadGameData(data);
+            } catch (err) {
+                alert("Ошибка чтения сохранения!");
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    window.togglePause = function() {
+        if (gameState === 'PLAYING') {
+            gameState = 'PAUSED';
+            document.getElementById('pauseMenu').classList.remove('hidden');
+        } else if (gameState === 'PAUSED') {
+            gameState = 'PLAYING';
+            document.getElementById('pauseMenu').classList.add('hidden');
+        }
+    }
+
+    // --- ЛОГИКА СОХРАНЕНИЯ ---
+    window.saveGame = function() {
+        const data = {
+            mode: gameMode,
+            player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, wIdx: player.weaponIndex },
+            weapons: weapons,
+            score: score,
+            wave: wave,
+            kills: totalKills,
+            enemies: enemies,
+            items: items,
+            bombs: placedBombs
+        };
+
+        const json = JSON.stringify(data);
+        const blob = new Blob([json], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "metro_save.json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    window.triggerLoad = function() {
+        document.getElementById('loadFileBtn').click();
+    }
+
+    function loadGameData(data) {
+        isDemo = false;
+        gameMode = data.mode;
+        player.x = data.player.x;
+        player.y = data.player.y;
+        player.hp = data.player.hp;
+        player.maxHp = data.player.maxHp;
+        weapons = data.weapons; 
+        player.weaponIndex = data.player.wIdx;
+
+        score = data.score;
+        wave = data.wave;
+        totalKills = data.kills;
+        enemies = data.enemies || [];
+        items = data.items || [];
+        placedBombs = data.bombs || [];
+        
+        bullets = []; particles = [];
+        train.timer = 0; train.active = false; 
+
+        gameState = 'PLAYING';
+        document.getElementById('menu').classList.add('hidden');
+        document.getElementById('pauseMenu').classList.add('hidden');
+        document.getElementById('gameOver').classList.add('hidden');
+        document.getElementById('ui').style.display = 'block';
+
+        updateUI();
+    }
+
+    // --- ЗАПУСК ИГРЫ ---
+    window.initGame = function(mode) {
+        if (mode === 'DEMO') {
+            isDemo = true;
+            gameState = 'MENU';
+        } else {
+            isDemo = false;
+            gameMode = mode;
+            gameState = 'PLAYING';
+            document.getElementById('ui').style.display = 'block';
+            document.getElementById('menu').classList.add('hidden');
+        }
+        startGame();
+    }
+
+    function startGame() {
+        player.x = 300; player.y = WORLD_H - 300;
+        player.hp = 100; player.maxHp = 100;
+        score = 0; wave = 1; totalKills = 0;
+        player.reloading = false;
+        bullets = []; enemies = []; particles = []; items = []; placedBombs = [];
+        train.timer = 0; train.active = false;
+
+        // Инициализация оружия
+        if (gameMode === 'FISTS') {
+            weapons = [ JSON.parse(JSON.stringify(ALL_WEAPONS[2])) ];
+            player.weaponIndex = 0;
+        } else {
+            weapons = JSON.parse(JSON.stringify(ALL_WEAPONS));
+            player.weaponIndex = isDemo ? 4 : 2; // Бот берет УЗИ (индекс 4)
+            if (isDemo) weapons[4].ammo = Infinity; // Бесконечные патроны для бота
+        }
+
+        if (gameMode === 'HARDCORE') { player.hp = 1; player.maxHp = 1; }
+
+        if (!isDemo) {
+            document.getElementById('gameOver').classList.add('hidden');
+            document.getElementById('victory').classList.add('hidden');
+        }
+
+        if (gameMode === '100_ENEMIES') {
+            document.getElementById('wave-ui').classList.add('hidden');
+            document.getElementById('goal-ui').classList.remove('hidden');
+        } else {
+            document.getElementById('wave-ui').classList.remove('hidden');
+            document.getElementById('goal-ui').classList.add('hidden');
+        }
+
+        spawnWave();
+        if (isDemo) {
+            // Если мы уже в цикле, не запускаем второй
+            // Но при старте страницы loop вызывается один раз
+        }
+    }
+
+    // --- ИГРОВАЯ ЛОГИКА ---
+
+    function detonateBombs() {
+        if (placedBombs.length === 0) return;
+        placedBombs.forEach(b => {
+            spawnParticles(b.x, b.y, 50, 'orange');
+            enemies.forEach(e => {
+                let dist = Math.hypot(e.x - b.x, e.y - b.y);
+                if (dist < b.range) {
+                    e.hp -= b.dmg;
+                    e.vx += (e.x - b.x)/dist * 20; e.vy += (e.y - b.y)/dist * 20;
+                    spawnParticles(e.x, e.y, 10, 'black');
+                }
+            });
+        });
+        placedBombs = [];
+    }
+
+    function spawnWave() {
+        let count = 5 + wave * 2;
+        if (gameMode === '100_ENEMIES') count = 8 + wave * 3;
+        for (let i = 0; i < count; i++) spawnEnemy();
+    }
+
+    function checkWallCollision(x, y, r) {
+        for (let w of walls) {
+            let cx = Math.max(w.x, Math.min(x, w.x + w.w));
+            let cy = Math.max(w.y, Math.min(y, w.y + w.h));
+            let dx = x - cx; let dy = y - cy;
+            if ((dx * dx + dy * dy) < (r * r)) return true;
+        }
+        return false;
+    }
+
+    function spawnEnemy() {
+        if (gameMode === '100_ENEMIES' && (enemies.length + totalKills) >= 100) return;
+        let sx, sy, valid = false, att = 0;
+        while (!valid && att < 50) {
+            att++; sx = Math.random() * (WORLD_W-100)+50; sy = Math.random() * (WORLD_H-100)+50;
+            if (!checkWallCollision(sx, sy, 40) && !(sy > train.y - 50 && sy < train.y + train.height + 50)) {
+                if (Math.hypot(sx - player.x, sy - player.y) > 500) valid = true;
+            }
+        }
+        if (!valid) return;
+        let r = Math.random();
+        let e = { x: sx, y: sy, vx: 0, vy: 0 };
+        if (r > 0.85) { e.c='#0c0'; e.s=2; e.hp=120; e.r=25; e.dmg=0.8; }
+        else if (r > 0.65) { e.c='#f00'; e.s=5.5; e.hp=25; e.r=14; e.dmg=0.4; }
+        else { e.c='#a0a'; e.s=3.5; e.hp=45; e.r=18; e.dmg=0.5; }
+        e.maxHp = e.hp;
+        enemies.push(e);
+    }
+
+    function spawnItem() {
+        if (items.length >= 6) return;
+        let ix, iy, valid = false, att = 0;
+        while (!valid && att < 50) {
+            att++; ix = Math.random()*(WORLD_W-100)+50; iy = Math.random()*(WORLD_H-100)+50;
+            if (!checkWallCollision(ix, iy, 30) && !(iy > train.y-50 && iy < train.y+train.height+50)) valid = true;
+        }
+        if (!valid) return;
+        let rand = Math.random();
+        let type = 'ammo';
+        if (gameMode !== 'HARDCORE' && rand > 0.6) type = 'health';
+        if (rand > 0.9 && gameMode !== 'FISTS') type = 'c4';
+        items.push({ x: ix, y: iy, type: type, size: 25 });
+    }
+
+    function reloadWeapon() {
+        let w = weapons[player.weaponIndex];
+        if (w.type === 'placeable' || w.ammo === Infinity) return;
+        if (w.ammo < w.max && !player.reloading) {
+            player.reloading = true; player.reloadMax = w.rld; player.reloadTimer = w.rld;
+        }
+    }
+
+    function update() {
+        if (!isDemo && gameMode === '100_ENEMIES' && totalKills >= 100) {
+            gameState = 'VICTORY';
+            document.getElementById('victory').classList.remove('hidden');
+            document.getElementById('ui').style.display = 'none';
+            return;
+        }
+        if (player.hp <= 0) {
+            if (isDemo) {
+                // Бот не может проиграть, он просто респавнится
+                startGame();
+                return;
+            }
+            gameState = 'GAMEOVER';
+            document.getElementById('final-kills').innerText = totalKills;
+            document.getElementById('gameOver').classList.remove('hidden');
+            document.getElementById('ui').style.display = 'none';
+            return;
+        }
+
+        if (frame % 400 === 0) spawnItem();
+
+        let dx = 0, dy = 0;
+
+        if (isDemo) {
+            // --- ИИ БОТА ---
+            let nearest = null;
+            let minDist = Infinity;
+            enemies.forEach(e => {
+                let d = Math.hypot(e.x - player.x, e.y - player.y);
+                if (d < minDist) { minDist = d; nearest = e; }
+            });
+
+            if (nearest) {
+                // Целимся во врага
+                player.angle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
+                // Стреляем
+                mouse.down = true;
+                
+                // Двигаемся
+                if (minDist > 400) { // Подходим ближе
+                    dx = Math.cos(player.angle);
+                    dy = Math.sin(player.angle);
+                } else if (minDist < 200) { // Отходим назад
+                    dx = -Math.cos(player.angle);
+                    dy = -Math.sin(player.angle);
+                } else {
+                     // Стрейф (ходим боком) для крутости
+                     dx = Math.cos(player.angle + Math.PI/2);
+                     dy = Math.sin(player.angle + Math.PI/2);
+                }
+            } else {
+                mouse.down = false;
+                // Бродим случайно, если нет врагов
+                player.angle += 0.05;
+            }
+        } else {
+            // Управление игрока
+            if (keys['KeyW']) dy = -1; if (keys['KeyS']) dy = 1;
+            if (keys['KeyA']) dx = -1; if (keys['KeyD']) dx = 1;
+            
+            camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
+            camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
+            player.angle = Math.atan2((mouse.y + camera.y) - player.y, (mouse.x + camera.x) - player.x);
+        }
+
+        if (dx || dy) {
+            let l = Math.hypot(dx, dy);
+            let mx = (dx/l)*player.speed; let my = (dy/l)*player.speed;
+            if (!checkWallCollision(player.x+mx, player.y, player.radius)) player.x += mx;
+            if (!checkWallCollision(player.x, player.y+my, player.radius)) player.y += my;
+        }
+
+        if (isDemo) {
+            // Камера следит за ботом тоже, но чуть плавнее можно
+            camera.x = Math.max(0, Math.min(player.x - canvas.width/2, WORLD_W - canvas.width));
+            camera.y = Math.max(0, Math.min(player.y - canvas.height/2, WORLD_H - canvas.height));
+        }
+
+        if (player.reloading) {
+            player.reloadTimer--;
+            if (player.reloadTimer <= 0) {
+                weapons[player.weaponIndex].ammo = weapons[player.weaponIndex].max;
+                player.reloading = false; updateUI();
+            }
+        }
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            let it = items[i];
+            if (Math.hypot(player.x - it.x, player.y - it.y) < player.radius + it.size) {
+                let picked = false;
+                if (it.type === 'health' && player.hp < player.maxHp) { 
+                    player.hp = Math.min(player.maxHp, player.hp+30); 
+                    spawnParticles(player.x, player.y, 10, '#0f0'); picked = true; 
+                }
+                else if (it.type === 'ammo') { 
+                    let w = weapons[player.weaponIndex];
+                    if (w.type !== 'placeable' && w.ammo !== Infinity && w.ammo < w.max) { 
+                        w.ammo = w.max; spawnParticles(player.x, player.y, 10, '#ff0'); picked = true; 
+                    }
+                }
+                else if (it.type === 'c4') {
+                    let c4 = weapons.find(w => w.name === "C4 БОМБА");
+                    if (c4) { c4.ammo = Math.min(c4.ammo + 2, c4.max); spawnParticles(player.x, player.y, 10, '#f00'); picked = true; }
+                }
+                if (picked) { items.splice(i, 1); updateUI(); }
+            }
+        }
+
+        let w = weapons[player.weaponIndex];
+        if (w.ammo <= 0 && w.ammo !== Infinity && !player.reloading && w.type !== 'placeable') reloadWeapon();
+
+        if (mouse.down && !player.reloading && w.ammo > 0 && frame % w.delay === 0) {
+            if (w.ammo !== Infinity) w.ammo--;
+            
+            if (w.type === 'placeable') {
+                placedBombs.push({ x: player.x, y: player.y, dmg: w.dmg, range: w.range });
+            } 
+            else if (w.type === 'gun') {
+                shake = 5;
+                for (let i = 0; i < w.count; i++) {
+                    let s = (Math.random()-0.5)*w.spread;
+                    bullets.push({
+                        x: player.x + Math.cos(player.angle)*25, y: player.y + Math.sin(player.angle)*25,
+                        vx: Math.cos(player.angle+s)*18, vy: Math.sin(player.angle+s)*18,
+                        dmg: w.dmg, range: w.range, dist: 0, col: w.col
+                    });
+                }
+            } else { 
+                enemies.forEach(e => {
+                    let d = Math.hypot(e.x - player.x, e.y - player.y);
+                    if (d < w.range + e.r) {
+                        let angleToEnemy = Math.atan2(e.y - player.y, e.x - player.x);
+                        let angleDiff = Math.abs(angleToEnemy - player.angle);
+                        if (angleDiff > Math.PI) angleDiff = (Math.PI * 2) - angleDiff;
+                        
+                        if (angleDiff < 1.5) {
+                            e.hp -= w.dmg; 
+                            e.vx += Math.cos(player.angle)*15; e.vy += Math.sin(player.angle)*15;
+                            spawnParticles(e.x, e.y, 5, '#fff');
+                        }
+                    }
+                });
+            }
+            updateUI();
+        }
+
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.x += b.vx; b.y += b.vy; b.dist += Math.hypot(b.vx, b.vy);
+            let hit = false;
+            if (b.dist > b.range || checkWallCollision(b.x, b.y, 2)) hit = true;
+            else {
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    let e = enemies[j];
+                    if (Math.hypot(b.x - e.x, b.y - e.y) < e.r + 5) {
+                        e.hp -= b.dmg; e.vx += b.vx*0.1; e.vy += b.vy*0.1;
+                        spawnParticles(e.x, e.y, 2, '#000'); hit = true; break;
+                    }
+                }
+            }
+            if (hit) bullets.splice(i, 1);
+        }
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let e = enemies[i];
+            let ang = Math.atan2(player.y - e.y, player.x - e.x);
+            e.vx += Math.cos(ang)*0.3; e.vy += Math.sin(ang)*0.3;
+            e.vx *= 0.9; e.vy *= 0.9;
+            let s = Math.hypot(e.vx, e.vy);
+            if (s > e.s) { e.vx = (e.vx/s)*e.s; e.vy = (e.vy/s)*e.s; }
+
+            if (!checkWallCollision(e.x+e.vx, e.y, e.r)) e.x += e.vx; else e.vx *= -0.5;
+            if (!checkWallCollision(e.x, e.y+e.vy, e.r)) e.y += e.vy; else e.vy *= -0.5;
+
+            let distP = Math.hypot(player.x - e.x, player.y - e.y);
+            let minP = player.radius + e.r;
+            if (distP < minP) {
+                let ov = minP - distP;
+                let dx = player.x - e.x, dy = player.y - e.y;
+                e.x -= (dx/distP)*ov*0.8; e.y -= (dy/distP)*ov*0.8;
+                if(!checkWallCollision(player.x+(dx/distP)*2, player.y, player.radius)) player.x += (dx/distP)*2;
+                if(!checkWallCollision(player.x, player.y+(dy/distP)*2, player.radius)) player.y += (dy/distP)*2;
+                player.hp -= e.dmg; updateUI();
+            }
+
+            for (let j = i - 1; j >= 0; j--) {
+                let e2 = enemies[j];
+                let d2 = Math.hypot(e.x - e2.x, e.y - e2.y);
+                let m2 = e.r + e2.r;
+                if (d2 < m2 && d2 > 0) {
+                    let ov = m2 - d2;
+                    let dx2 = e.x - e2.x, dy2 = e.y - e2.y;
+                    e.x += (dx2/d2)*ov*0.4; e.y += (dy2/d2)*ov*0.4;
+                    e2.x -= (dx2/d2)*ov*0.4; e2.y -= (dy2/d2)*ov*0.4;
+                }
+            }
+
+            if (e.hp <= 0) { 
+                score += 15; totalKills++; spawnParticles(e.x, e.y, 15, '#000'); enemies.splice(i, 1); updateUI(); 
+            }
+        }
+
+        if (enemies.length === 0 && train.timer < 500) { wave++; spawnWave(); updateUI(); }
+
+        train.timer++;
+        if (train.timer > 1000) {
+            if (!train.warning) train.warning = true;
+            if (train.timer > 1200 && !train.active) { train.active = true; train.warning = false; train.x = -3000; }
+        }
+        if (train.active) {
+            train.x += train.speed;
+            let tx = train.x, ty = train.y, tw = 4000, th = train.height;
+            if (player.x > tx && player.x < tx+tw && player.y > ty && player.y < ty+th) { player.hp = 0; spawnParticles(player.x, player.y, 50, 'red'); }
+            enemies.forEach(e => { if (e.x > tx && e.x < tx+tw && e.y > ty && e.y < ty+th) { e.hp = -999; spawnParticles(e.x, e.y, 20, '#000'); } });
+            if (train.x > WORLD_W + 1000) { train.active = false; train.timer = 0; }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life--; if (p.life <= 0) particles.splice(i, 1);
+        }
+        frame++;
+    }
+
+    function spawnParticles(x, y, n, c) {
+        for(let i=0; i<n; i++) particles.push({ x: x, y: y, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5, life: 30+Math.random()*30, size: Math.random()*5+2, color: c });
+    }
+
+    let shake = 0;
+    function draw() {
+        ctx.fillStyle = '#151515'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.9; }
+        ctx.translate(-camera.x, -camera.y);
+
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+        for(let xx=0; xx<WORLD_W; xx+=100) { ctx.beginPath(); ctx.moveTo(xx,0); ctx.lineTo(xx,WORLD_H); ctx.stroke(); }
+        for(let yy=0; yy<WORLD_H; yy+=100) { ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(WORLD_W,yy); ctx.stroke(); }
+
+        let ty = train.y;
+        if (train.warning && frame % 15 < 8) { ctx.fillStyle = 'rgba(200,0,0,0.3)'; ctx.fillRect(0, ty, WORLD_W, train.height); }
+        ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, ty+10, WORLD_W, train.height-20);
+        ctx.strokeStyle = '#666'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(0, ty+20); ctx.lineTo(WORLD_W, ty+20); ctx.moveTo(0, ty+train.height-20); ctx.lineTo(WORLD_W, ty+train.height-20); ctx.stroke();
+
+        particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
+
+        placedBombs.forEach(b => {
+            ctx.fillStyle = '#f00'; let pulse = Math.sin(frame * 0.2) * 5;
+            ctx.fillRect(b.x - 10 - pulse/2, b.y - 10 - pulse/2, 20+pulse, 20+pulse);
+            ctx.strokeStyle = 'yellow'; ctx.strokeRect(b.x - 10 - pulse/2, b.y - 10 - pulse/2, 20+pulse, 20+pulse);
+        });
+
+        items.forEach(it => {
+            let s = 1 + Math.sin(frame * 0.1) * 0.1;
+            let cx = it.x - (it.size * s)/2, cy = it.y - (it.size * s)/2;
+            if (it.type === 'health') { ctx.fillStyle = 'green'; ctx.fillRect(cx, cy, it.size*s, it.size*s); ctx.fillStyle = 'white'; ctx.fillRect(cx+8, cy+2, 8, 20); ctx.fillRect(cx+2, cy+8, 20, 8); }
+            else if (it.type === 'ammo') { ctx.fillStyle = '#cc0'; ctx.fillRect(cx, cy, it.size*s, it.size*s); ctx.fillStyle = 'black'; ctx.fillRect(cx+5, cy+5, 5, 15); ctx.fillRect(cx+15, cy+5, 5, 15); }
+            else if (it.type === 'c4') { ctx.fillStyle = '#a00'; ctx.fillRect(cx, cy, it.size*s, it.size*s); ctx.fillStyle = '#f00'; ctx.font = "20px Courier"; ctx.fillText("C4", cx+2, cy+18); }
+        });
+
+        ctx.fillStyle = '#111'; ctx.strokeStyle = '#444'; ctx.lineWidth = 3;
+        walls.forEach(w => { ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeRect(w.x, w.y, w.w, w.h); });
+
+        if (train.active) {
+            ctx.fillStyle = '#334'; ctx.fillRect(train.x, train.y+10, 4000, train.height-20);
+            ctx.fillStyle = '#fea'; ctx.fillRect(train.x+3950, train.y+30, 50, train.height-60);
+        }
+
+        enemies.forEach(e => {
+            ctx.fillStyle = e.c; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        });
+
+        ctx.save(); ctx.translate(player.x, player.y);
+        if (player.reloading) { ctx.fillStyle = 'red'; ctx.fillRect(-20, -35, 40, 5); ctx.fillStyle = '#0f0'; ctx.fillRect(-20, -35, 40*(1 - player.reloadTimer/player.reloadMax), 5); }
+        ctx.rotate(player.angle);
+        ctx.fillStyle = '#369'; ctx.beginPath(); ctx.arc(0, 0, player.radius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = weapons[player.weaponIndex].col; ctx.fillRect(0, -5, 25, 10);
+        ctx.restore();
+
+        bullets.forEach(b => { ctx.fillStyle = b.col; ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill(); });
+        ctx.restore();
+    }
+
+    function updateUI() {
+        document.getElementById('hp-val').innerText = Math.floor(player.hp);
+        document.getElementById('wave-val').innerText = wave;
+        document.getElementById('kill-val').innerText = totalKills;
+        document.getElementById('enemies-left').innerText = enemies.length; // Обновляем кол-во врагов
+        
+        let w = weapons[player.weaponIndex];
+        document.getElementById('w-name').innerText = w.name;
+        
+        let hint = document.getElementById('c4-msg');
+        if (w.type === 'placeable') hint.innerHTML = "[E] ВЗОРВАТЬ | [ESC] ПАУЗА";
+        else hint.innerHTML = "[ESC] ПАУЗА";
+        hint.classList.remove('hidden');
+
+        let aEl = document.getElementById('ammo-count');
+        if (w.ammo === Infinity) { aEl.innerText = "∞"; aEl.classList.remove('reload-warn'); }
+        else {
+            aEl.innerText = w.ammo + " / " + w.max;
+            if (w.ammo === 0) aEl.classList.add('reload-warn'); else aEl.classList.remove('reload-warn');
+        }
+    }
+
+    // Инициализация Демо режима сразу при загрузке
+    initGame('DEMO');
+
+    function loop() { 
+        if (gameState === 'PLAYING' || (gameState === 'MENU' && isDemo)) { 
+            update(); 
+            draw(); 
+        } 
+        requestAnimationFrame(loop); 
+    }
+    loop(); // Запуск цикла
+};
+</script>
+</body>
+</html>
+```
