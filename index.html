@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Metro Doom - City Fixed</title>
+    <title>Metro Doom v4.0.1</title>
     <style>
         body { 
             margin: 0; padding: 0; overflow: hidden; background: #000; 
@@ -55,6 +55,7 @@
         .reload-warn { color: red !important; animation: blink 0.3s infinite; }
         @keyframes blink { 50% { opacity: 0; } }
 
+        /* --- MOBILE CONTROLS --- */
         #mobile-controls {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; z-index: 20; display: none;
@@ -77,21 +78,73 @@
             background: rgba(0, 255, 255, 0.4); border-radius: 50%; pointer-events: none;
         }
 
-        #btn-fire {
-            bottom: 50px; right: 30px; width: 80px; height: 80px; 
-            background: rgba(255, 50, 50, 0.25); border-color: #f55; font-size: 14px;
-        }
+        #btn-fire { bottom: 50px; right: 30px; width: 80px; height: 80px; background: rgba(255, 50, 50, 0.25); border-color: #f55; font-size: 14px; }
         .mini-btn { width: 50px; height: 50px; font-size: 16px; }
         #btn-reload { bottom: 140px; right: 30px; }
         #btn-bomb { bottom: 140px; right: 90px; border-color: orange; color: orange; }
         #btn-switch { bottom: 50px; right: 120px; width: 60px; height: 60px; font-size: 10px; text-align: center; line-height: 12px; }
         #btn-pause-mob { top: env(safe-area-inset-top, 20px); right: 20px; width: 40px; height: 40px; font-size: 18px; border-radius: 8px; }
+
+        /* --- VERSION & ADMIN --- */
+        #version-label {
+            position: absolute; bottom: 10px; right: 10px; color: #555; font-size: 14px; 
+            cursor: pointer; z-index: 100;
+        }
+
+        #password-modal {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 10000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        #pass-input { padding: 10px; font-size: 20px; margin-bottom: 10px; background: #222; color: #0f0; border: 1px solid #0f0; }
+        
+        #admin-menu {
+            position: absolute; top: 50px; left: 50px; width: 250px;
+            background: rgba(0, 20, 0, 0.9); border: 2px solid #0f0;
+            z-index: 9999; color: #0f0; padding: 0; display: flex; flex-direction: column;
+            box-shadow: 0 0 20px #0f0;
+        }
+        #admin-header {
+            background: #0f0; color: black; padding: 5px; text-align: center; 
+            font-weight: bold; cursor: move; touch-action: none;
+        }
+        #admin-body { padding: 10px; display: flex; flex-direction: column; gap: 5px; }
+        .admin-btn { width: 100%; font-size: 12px; padding: 5px; border-color: #0f0; background: #000; color: #0f0; }
+        .admin-input { width: 90%; background: #000; color: #fff; border: 1px solid #555; margin-bottom: 5px; }
     </style>
 </head>
 <body>
 
 <input type="file" id="loadFileBtn" style="display:none" accept=".json">
 <div id="blood-screen"></div>
+
+<div id="password-modal" class="hidden">
+    <h2 style="color:#0f0">ВВЕДИТЕ ПАРОЛЬ</h2>
+    <input type="password" id="pass-input" placeholder="Пароль">
+    <button onclick="checkAdminPass()" style="width: 200px;">ВОЙТИ</button>
+    <button onclick="closePassModal()" style="width: 200px; margin-top:10px; border-color:#555;">ОТМЕНА</button>
+</div>
+
+<div id="admin-menu" class="hidden">
+    <div id="admin-header">ADMIN TOOLS (Drag Me)</div>
+    <div id="admin-body">
+        <button class="admin-btn" onclick="giveAdminGun()">1. АДМИН ГАН</button>
+        <hr style="width:100%; border:0; border-top:1px solid #0f0;">
+        <div style="font-size:10px;">СПАВН МОНСТРА:</div>
+        <input type="number" id="admin-hp" class="admin-input" placeholder="HP (ex: 500)" value="100">
+        <select id="admin-type" class="admin-input">
+            <option value="green">Зеленый (Обычный)</option>
+            <option value="red">Красный (Быстрый)</option>
+            <option value="purple">Фиолетовый (Танк)</option>
+        </select>
+        <button class="admin-btn" onclick="spawnAdminEnemy()">2. СПАВНИТЬ</button>
+        <hr style="width:100%; border:0; border-top:1px solid #0f0;">
+        <button class="admin-btn" onclick="killAllEnemies()">3. УБИТЬ ВСЕХ</button>
+        <button class="admin-btn" onclick="toggleEsp()">4. УКАЗАТЕЛЬ (ESP)</button>
+        <button class="admin-btn" onclick="startGame()">5. РЕСТАРТ</button>
+        <button class="admin-btn" onclick="toggleAdminMenu()" style="border-color:red; color:red">ЗАКРЫТЬ</button>
+    </div>
+</div>
 
 <div id="ui">
     <div>HP: <span id="hp-val">100</span>%</div>
@@ -122,6 +175,7 @@
         <button onclick="initGame('HARDCORE')">ХАРДКОР (1 HP)</button>
         <button onclick="initGame('FISTS')">ТОЛЬКО КУЛАКИ</button>
     </div>
+    <div id="version-label" onclick="versionClick()">v4.0.1 beta</div>
 </div>
 
 <div id="pauseMenu" class="screen hidden">
@@ -190,43 +244,25 @@ window.onload = function() {
         },
         'CITY': {
             name: "ГОРОД",
-            spawn: { x: 1250, y: 750 }, // Спавн в центре перекрестка
+            spawn: { x: 1250, y: 750 },
             bg: '#335533', 
             ground: [
-                // ДОРОГИ (КРЕСТ)
-                {x: 0, y: 650, w: 2500, h: 200, c: '#444'}, // Горизонтальная дорога (центр)
-                {x: 1150, y: 0, w: 200, h: 1500, c: '#444'}, // Вертикальная дорога (центр)
+                {x: 0, y: 650, w: 2500, h: 200, c: '#444'},
+                {x: 1150, y: 0, w: 200, h: 1500, c: '#444'},
             ],
             walls: [
-                // ГРАНИЦЫ МИРА
                 {x: -100, y: -100, w: WORLD_W + 200, h: 100, c:'#000'}, 
                 {x: -100, y: WORLD_H, w: WORLD_W + 200, h: 100, c:'#000'},
                 {x: -100, y: 0, w: 100, h: WORLD_H, c:'#000'}, {x: WORLD_W, y: 0, w: 100, h: WORLD_H, c:'#000'},
-                
-                // --- ЗОНА 1 (ВЕРХ-ЛЕВО): МАГАЗИН ---
                 {x: 200, y: 100, w: 20, h: 300, c:'#a55'},  {x: 600, y: 100, w: 20, h: 300, c:'#a55'},
-                {x: 200, y: 100, w: 420, h: 20, c:'#a55'}, // Задняя стена
-                {x: 200, y: 400, w: 150, h: 20, c:'#a55'}, {x: 450, y: 400, w: 170, h: 20, c:'#a55'}, // Передняя
-                
-                // --- ЗОНА 2 (ВЕРХ-ПРАВО): ПОЛИЦЕЙСКИЙ УЧАСТОК ---
+                {x: 200, y: 100, w: 420, h: 20, c:'#a55'}, {x: 200, y: 400, w: 150, h: 20, c:'#a55'}, {x: 450, y: 400, w: 170, h: 20, c:'#a55'},
                 {x: 1600, y: 100, w: 20, h: 400, c:'#336'}, {x: 2000, y: 100, w: 20, h: 400, c:'#336'},
-                {x: 1600, y: 100, w: 420, h: 20, c:'#336'},
-                {x: 1600, y: 500, w: 150, h: 20, c:'#336'}, {x: 1850, y: 500, w: 170, h: 20, c:'#336'},
-
-                // --- ЗОНА 3 (НИЗ-ЛЕВО): ДОМ ---
+                {x: 1600, y: 100, w: 420, h: 20, c:'#336'}, {x: 1600, y: 500, w: 150, h: 20, c:'#336'}, {x: 1850, y: 500, w: 170, h: 20, c:'#336'},
                 {x: 300, y: 1000, w: 20, h: 300, c:'#654'}, {x: 700, y: 1000, w: 20, h: 300, c:'#654'},
-                {x: 300, y: 1300, w: 420, h: 20, c:'#654'},
-                {x: 300, y: 1000, w: 150, h: 20, c:'#654'}, {x: 550, y: 1000, w: 170, h: 20, c:'#654'},
-
-                // --- ЗОНА 4 (НИЗ-ПРАВО): СКЛАД ---
+                {x: 300, y: 1300, w: 420, h: 20, c:'#654'}, {x: 300, y: 1000, w: 150, h: 20, c:'#654'}, {x: 550, y: 1000, w: 170, h: 20, c:'#654'},
                 {x: 1700, y: 1000, w: 20, h: 300, c:'#555'}, {x: 2200, y: 1000, w: 20, h: 300, c:'#555'},
-                {x: 1700, y: 1300, w: 520, h: 20, c:'#555'},
-                {x: 1700, y: 1000, w: 200, h: 20, c:'#555'}, {x: 2000, y: 1000, w: 220, h: 20, c:'#555'},
-                
-                // Препятствия на улице (чтобы не было пусто)
-                {x: 1450, y: 300, w: 50, h: 50, c:'#222'}, 
-                {x: 1000, y: 800, w: 50, h: 50, c:'#222'},
-                {x: 1450, y: 1200, w: 100, h: 20, c:'#222'} 
+                {x: 1700, y: 1300, w: 520, h: 20, c:'#555'}, {x: 1700, y: 1000, w: 200, h: 20, c:'#555'}, {x: 2000, y: 1000, w: 220, h: 20, c:'#555'},
+                {x: 1450, y: 300, w: 50, h: 50, c:'#222'}, {x: 1000, y: 800, w: 50, h: 50, c:'#222'}, {x: 1450, y: 1200, w: 100, h: 20, c:'#222'} 
             ]
         }
     };
@@ -268,6 +304,121 @@ window.onload = function() {
 
     const keys = {};
     const mouse = { x: 0, y: 0, down: false };
+
+    // --- АДМИН ПЕРЕМЕННЫЕ ---
+    let versionClicks = 0;
+    let adminEsp = false;
+
+    window.versionClick = function() {
+        versionClicks++;
+        if (versionClicks >= 6) {
+            versionClicks = 0;
+            document.getElementById('password-modal').classList.remove('hidden');
+        }
+    };
+
+    window.closePassModal = function() {
+        document.getElementById('password-modal').classList.add('hidden');
+    };
+
+    window.checkAdminPass = function() {
+        const pass = document.getElementById('pass-input').value;
+        if (pass === 'vuntraq27') {
+            document.getElementById('password-modal').classList.add('hidden');
+            document.getElementById('admin-menu').classList.remove('hidden');
+            alert("АДМИН РЕЖИМ ВКЛЮЧЕН");
+        } else {
+            alert("НЕВЕРНЫЙ ПАРОЛЬ");
+        }
+    };
+
+    window.toggleAdminMenu = function() {
+        document.getElementById('admin-menu').classList.toggle('hidden');
+    };
+
+    window.giveAdminGun = function() {
+        let adminGun = { 
+            name: "ADMIN GUN", type: 'gun', dmg: 100, delay: 2, 
+            ammo: Infinity, max: 999, rld: 0, count: 1, spread: 0.1, range: 1500, col: '#0f0' 
+        };
+        weapons.push(adminGun);
+        player.weaponIndex = weapons.length - 1;
+        updateUI();
+    };
+
+    window.spawnAdminEnemy = function() {
+        let hp = parseInt(document.getElementById('admin-hp').value) || 100;
+        let type = document.getElementById('admin-type').value;
+        let sx = player.x + (Math.random()-0.5)*400;
+        let sy = player.y + (Math.random()-0.5)*400;
+        
+        let e = { x: sx, y: sy, vx: 0, vy: 0, maxHp: hp, hp: hp };
+        if (type === 'green') { e.c='#0c0'; e.s=2; e.r=25; e.dmg=0.8; }
+        else if (type === 'red') { e.c='#f00'; e.s=5.5; e.r=14; e.dmg=0.4; }
+        else { e.c='#a0a'; e.s=3.5; e.r=18; e.dmg=0.5; }
+        enemies.push(e);
+        updateUI();
+    };
+
+    window.killAllEnemies = function() {
+        enemies.forEach(e => {
+            spawnParticles(e.x, e.y, 15, '#000');
+            score += 15; totalKills++;
+        });
+        enemies = [];
+        updateUI();
+    };
+
+    window.toggleEsp = function() {
+        adminEsp = !adminEsp;
+    };
+
+    // DRAGGABLE MENU
+    dragElement(document.getElementById("admin-menu"));
+    function dragElement(elmnt) {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        if (document.getElementById(elmnt.id + "header")) {
+            document.getElementById(elmnt.id + "header").onmousedown = dragMouseDown;
+            document.getElementById(elmnt.id + "header").ontouchstart = dragTouchStart;
+        } else {
+            elmnt.onmousedown = dragMouseDown;
+        }
+
+        function dragMouseDown(e) {
+            e = e || window.event; e.preventDefault();
+            pos3 = e.clientX; pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+
+        function elementDrag(e) {
+            e = e || window.event; e.preventDefault();
+            pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+            pos3 = e.clientX; pos4 = e.clientY;
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+            elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+
+        function dragTouchStart(e) {
+            const touch = e.touches[0];
+            pos3 = touch.clientX; pos4 = touch.clientY;
+            document.ontouchend = closeDragElement;
+            document.ontouchmove = elementTouchDrag;
+        }
+
+        function elementTouchDrag(e) {
+            const touch = e.touches[0];
+            pos1 = pos3 - touch.clientX; pos2 = pos4 - touch.clientY;
+            pos3 = touch.clientX; pos4 = touch.clientY;
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+            elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+
+        function closeDragElement() {
+            document.onmouseup = null; document.onmousemove = null;
+            document.ontouchend = null; document.ontouchmove = null;
+        }
+    }
 
     // --- МОБИЛЬНОЕ УПРАВЛЕНИЕ ---
     let joystick = { active: false, dx: 0, dy: 0, originX: 0, originY: 0 };
@@ -315,7 +466,7 @@ window.onload = function() {
 
     // --- УПРАВЛЕНИЕ ---
     window.addEventListener('keydown', e => {
-        if (isDemo) return; 
+        if (isDemo && gameState === 'MENU') return; 
         keys[e.code] = true;
         if (e.code === 'Escape' && gameState !== 'MENU' && gameState !== 'GAMEOVER') togglePause();
         if (gameState === 'PLAYING') {
@@ -354,25 +505,29 @@ window.onload = function() {
         else if (gameState === 'PAUSED') { gameState = 'PLAYING'; document.getElementById('pauseMenu').classList.add('hidden'); }
     }
 
-    // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ СОХРАНЕНИЯ (БЕЗ ТАЙМАУТА) ---
+    // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ СОХРАНЕНИЯ ---
     window.saveGame = function() {
-        const data = {
-            mode: gameMode, map: currentMapKey,
-            player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, wIdx: player.weaponIndex },
-            weapons: weapons, score: score, wave: wave, kills: totalKills,
-            enemies: enemies, items: items, bombs: placedBombs
-        };
-        const json = JSON.stringify(data);
-        const blob = new Blob([json], {type: "application/json"});
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = "metro_save_" + Date.now() + ".json";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        try {
+            const data = {
+                mode: gameMode, map: currentMapKey,
+                player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, wIdx: player.weaponIndex },
+                weapons: weapons, score: score, wave: wave, kills: totalKills,
+                enemies: enemies, items: items, bombs: placedBombs
+            };
+            const json = JSON.stringify(data);
+            const blob = new Blob([json], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "metro_save_v4.json";
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+            alert("Сохранение скачано!");
+        } catch (e) {
+            alert("Ошибка сохранения: " + e.message);
+        }
     }
 
     window.triggerLoad = function() { document.getElementById('loadFileBtn').click(); }
@@ -398,15 +553,18 @@ window.onload = function() {
         startGame();
     }
 
-    function startGame() {
+    window.startGame = function() {
         let spawn = MAPS[currentMapKey].spawn;
         player.x = spawn.x; player.y = spawn.y;
         
         player.hp = 100; player.maxHp = 100;
         score = 0; wave = 1; totalKills = 0; player.reloading = false;
         bullets = []; enemies = []; particles = []; items = []; placedBombs = []; train.timer = 0; train.active = false;
+        
+        // Очищаем оружие, но если есть админ ган - пытаемся сохранить логику (тут сброс для честной игры)
         if (gameMode === 'FISTS') { weapons = [ JSON.parse(JSON.stringify(ALL_WEAPONS[2])) ]; player.weaponIndex = 0; } 
         else { weapons = JSON.parse(JSON.stringify(ALL_WEAPONS)); player.weaponIndex = isDemo ? 4 : 2; if (isDemo) weapons[4].ammo = Infinity; }
+        
         if (gameMode === 'HARDCORE') { player.hp = 1; player.maxHp = 1; }
         if (!isDemo) { document.getElementById('gameOver').classList.add('hidden'); document.getElementById('victory').classList.add('hidden'); }
         if (gameMode === '100_ENEMIES') { document.getElementById('wave-ui').classList.add('hidden'); document.getElementById('goal-ui').classList.remove('hidden'); } 
@@ -686,6 +844,14 @@ window.onload = function() {
             ctx.fillStyle = 'red'; ctx.fillRect(e.x - 15, e.y - e.r - 10, 30, 4);
             ctx.fillStyle = '#0f0'; ctx.fillRect(e.x - 15, e.y - e.r - 10, 30 * (e.hp/e.maxHp), 4);
         });
+
+        // ESP LINE (Admin)
+        if (adminEsp) {
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; ctx.lineWidth = 1;
+            enemies.forEach(e => {
+                ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+            });
+        }
 
         ctx.save(); ctx.translate(player.x, player.y);
         if (player.reloading) { ctx.fillStyle = 'red'; ctx.fillRect(-20, -35, 40, 5); ctx.fillStyle = '#0f0'; ctx.fillRect(-20, -35, 40*(1 - player.reloadTimer/player.reloadMax), 5); }
